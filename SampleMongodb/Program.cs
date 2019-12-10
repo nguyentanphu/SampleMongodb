@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using MongoDB.Driver.Core.Events;
 
 namespace SampleMongodb
 {
@@ -14,43 +18,60 @@ namespace SampleMongodb
 			BsonClassMap.RegisterClassMap<User>(cm =>
 			{
 				cm.AutoMap();
-				cm.MapIdMember(m => m.UserId);
+				cm.MapIdProperty(p => p.UserId);
 				cm.MapField("_photos").SetElementName("Photos");
 			});
 			BsonClassMap.RegisterClassMap<Photo>(cm =>
 			{
 				cm.AutoMap();
-				cm.MapIdMember(m => m.PhotoId);
+				cm.MapIdProperty(m => m.PhotoId);
 			});
 
-			var client = new MongoClient("mongodb://localhost:27017");
+			var connectionString = "mongodb://localhost:27017";
+			var mongoClientSettings = MongoClientSettings.FromConnectionString(connectionString);
+			mongoClientSettings.ClusterConfigurator = cb => {
+				cb.Subscribe<CommandStartedEvent>(e => {
+					//Console.WriteLine($"{e.CommandName} - {e.Command.ToJson()}");
+				});
+			};
+			var client = new MongoClient(mongoClientSettings);
 			var database = client.GetDatabase("awesomedb");
 			var collection = database.GetCollection<User>("User");
-			var userA = new User
-			{
-				UserId = Guid.NewGuid(),
-				IdentityId = Guid.NewGuid(),
-				City = "taolao",
-				Country = "bidao",
-				UserName = "taolaobidao",
 
-			};
-			userA.AddPhoto(new Photo
-			{
-				PhotoId = Guid.NewGuid(),
-				Description = "abc",
-				ExternalId = "dsadsdsa",
-			});
-			await collection.InsertOneAsync(userA);
+			var list = new List<User>();
 
-			var list = await collection.Find(FilterDefinition<User>.Empty)
+			for (int i = 0; i < 100000; i++)
+			{
+				var newUser = new User
+				{
+					UserId = Guid.NewGuid(),
+					IdentityId = Guid.NewGuid(),
+					City = "taolao",
+					Country = "bidao",
+					UserName = "taolaobidao",
+
+				};
+				newUser.AddPhoto(new Photo
+				{
+					PhotoId = Guid.NewGuid(),
+					Description = "abc",
+					ExternalId = "dsadsdsa",
+				});
+				list.Add(newUser);
+			}
+			await collection.InsertManyAsync(list);
+
+			Console.WriteLine();
+			var listResult = await collection.Find(FilterDefinition<User>.Empty)
 				.ToListAsync();
 
 			//foreach (var person in list)
 			//{
 			//	Console.WriteLine($"{person.Id}: {person.Name}");
 			//}
+			Console.ReadLine();
 		}
+
 	}
 
 	public class User
